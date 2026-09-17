@@ -1,102 +1,48 @@
-name: Windows Virtual PC Web (CRD)
+name: Ubuntu 24.04 GUI RDP Tailscale
 
 on:
   workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: windows-latest
+    rdp-vps:
+    runs-on: ubuntu-24.04
+
     steps:
-    - name: 1. Persiapan Sistem & Optimasi Performa
-      run: |
-        Write-Host "Mengoptimalkan pengaturan Windows..."
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
-        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
+    - name: Checkout Repository
+      uses: actions/checkout@v4
 
-    - name: 2. Install Chrome Remote Desktop Host
+    - name: Set Password for Runner
       run: |
-        Write-Host "Mengunduh Chrome Remote Desktop Installer..."
-        Invoke-WebRequest -Uri "https://dl.google.com/chromeremote/chromedesktopstreamersetup.exe" -OutFile "chromedesktopstreamersetup.exe"
-        Write-Host "Memasang Chrome Remote Desktop..."
-        Start-Process -FilePath "chromedesktopstreamersetup.exe" -ArgumentList "/quiet" -Wait
-        Remove-Item "chromedesktopstreamersetup.exe"
+        echo "runner:vpspassword123" | sudo chpasswd
 
-    - name: 3. Install Software Pendukung (Browser & Tools)
+    - name: Connect to Tailscale Network
+      uses: tailscale/github-action@v2
+      with:
+        authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+        args: --ssh
+
+    - name: Install Desktop Environment & XRDP
       run: |
-        Write-Host "Memasang Google Chrome Browser..."
-        Invoke-WebRequest -Uri "https://dl.google.com/chrome/install/standalonesetup64.exe" -OutFile "chromesetup.exe"
-        Start-Process -FilePath "chromesetup.exe" -ArgumentList "/silent /install" -Wait
-        Remove-Item "chromesetup.exe"
+        sudo apt update
+        # Install XFCE Desktop dan XRDP server
+        sudo DEBIAN_FRONTEND=noninteractive apt install -y xfce4 xfce4-goodies xrdp
         
-        Write-Host "Memasang WinRAR..."
-        Invoke-WebRequest -Uri "https://www.win-rar.com/fileadmin/winrar-versions/winrar/winrar-x64-624.exe" -OutFile "winrar.exe"
-        Start-Process -FilePath "winrar.exe" -ArgumentList "/S" -Wait
-        Remove-Item "winrar.exe"
+        # Konfigurasi XRDP agar menggunakan XFCE
+        echo "startxfce4" > ~/.xsession
+        sudo sed -i 's/port=3389/port=3389/g' /etc/xrdp/xrdp.ini
+        
+        # Izinkan user runner mengakses xrdp dan restart service
+        sudo usermod -aG sudo runner
+        sudo systemctl restart xrdp
 
-        Write-Host "Memasang 7-Zip..."
-        Invoke-WebRequest -Uri "https://www.7-zip.org/a/7z2301-x64.exe" -OutFile "7zip.exe"
-        Start-Process -FilePath "7zip.exe" -ArgumentList "/S" -Wait
-        Remove-Item "7zip.exe"
-
-    - name: 4. Install Developer Tools (Git & Node.js)
+    - name: Keep RDP Alive
       run: |
-        Write-Host "Memasang Git..."
-        Invoke-WebRequest -Uri "https://github.com/git-for-windows/git/releases/download/v2.42.0.windows.1/Git-2.42.0-64-bit.exe" -OutFile "git.exe"
-        Start-Process -FilePath "git.exe" -ArgumentList "/VERYSILENT /NORESTART" -Wait
-        Remove-Item "git.exe"
-
-        Write-Host "Memasang Node.js..."
-        Invoke-WebRequest -Uri "https://nodejs.org/dist/v18.18.0/node-v18.18.0-x64.msi" -OutFile "nodejs.msi"
-        Start-Process -FilePath "msiexec.exe" -ArgumentList "/i nodejs.msi /qn" -Wait
-        Remove-Item "nodejs.msi"
-
-    - name: 5. Verifikasi Otorisasi Google Chrome Remote Desktop
-      env:
-        AUTH_CODE: ${{ secrets.CRD_CODE }}
-      run: |
-        $code = "$env:AUTH_CODE"
-        if ([string]::IsNullOrWhitespace($code)) {
-            Write-Error "Secret CRD_CODE belum diisi di Settings GitHub!"
-            Write-Host "Silakan ambil kode dari https://remotedesktop.google.com/headless lalu simpan di Secret CRD_CODE."
-            exit 1
-        }
-        Write-Host "Menghubungkan akun Google..."
-        Invoke-Expression $code
-
-    - name: 6. Tampilkan Informasi Status Virtual PC
-      run: |
-        Write-Host "========================================================="
-        Write-Host "VIRTUAL PC BERHASIL DIAKTIFKAN DAN SIAP DIGUNAKAN!"
-        Write-Host "Akses dari HP via Web Browser:"
-        Write-Host "--> https://remotedesktop.google.com/access"
-        Write-Host "Status: Online"
-        Write-Host "========================================================="
-
-    - name: 7. Keep Alive Loop (Menjaga Server Tetap Aktif 6 Jam)
-      run: |
-        $counter = 0
-        $maxMinutes = 360
-        Write-Host "Memulai loop Keep Alive selama 6 jam..."
-        while ($counter -lt $maxMinutes) {
-            Start-Sleep -Seconds 60
-            $counter++
-            $remaining = $maxMinutes - $counter
-            Write-Host "Server RDP masih aktif... Sisa waktu: $remaining menit."
-        }
-      run: |
-        $ip = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
-        Write-Host "=========================================="
-        Write-Host "KONEKSI BERHASIL DIBUAT"
-        Write-Host "IP RDP Tailscale : $ip"
-        Write-Host "Username         : runneradmin"
-        Write-Host "Password         : (Gunakan value RDP_PASSWORD)"
-        Write-Host "=========================================="
-
-    - name: Keep Alive (Menjaga RDP Tetap Aktif)
-      run: |
-        $i = 0
-        while ($i -lt 360) {
-          Start-Sleep -Seconds 60
-          $i++
-        }
+        echo "=========================================="
+        echo "RDP Ubuntu 24.04 Berhasil Dijalankan!"
+        echo "Buka aplikasi Remote Desktop (RDP Client)"
+        echo "Masukkan IP Tailscale dan login:"
+        echo "Username: runner"
+        echo "Password: vpspassword123"
+        echo "=========================================="
+        
+        sleep 21600

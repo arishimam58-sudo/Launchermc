@@ -17,7 +17,7 @@ jobs:
       env:
         RDP_PASSWORD: ${{ secrets.RDP_PASSWORD }}
       run: |
-        $password = "$env:RDP_PASSWORD"
+        $password = "BlueBerrygaming990"
         if ([string]::IsNullOrWhitespace($password)) {
             Write-Error "Secret RDP_PASSWORD belum diisi di Settings GitHub!"
             exit 1

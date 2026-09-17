@@ -1,0 +1,52 @@
+name: Windows RDP with Tailscale
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+    - name: Mengaktifkan Remote Desktop & Firewall
+      run: |
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
+
+    - name: Mengatur Password User Admin
+      env:
+        RDP_PASSWORD: ${{ secrets.RDP_PASSWORD }}
+      run: |
+        $password = "$env:RDP_PASSWORD"
+        if ([string]::IsNullOrWhitespace($password)) {
+            Write-Error "Secret RDP_PASSWORD belum diisi di Settings GitHub!"
+            exit 1
+        }
+        net user runneradmin $password
+
+    - name: Unduh & Install Tailscale
+      env:
+        TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+      run: |
+        Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe" -OutFile "tailscale-setup.exe"
+        Start-Process -FilePath "tailscale-setup.exe" -ArgumentList "/quiet" -Wait
+        Start-Sleep -Seconds 10
+        & "C:\Program Files\Tailscale\tailscale.exe" up --authkey $env:TAILSCALE_AUTHKEY --hostname github-rdp
+
+    - name: Tampilkan Informasi Login RDP
+      run: |
+        $ip = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
+        Write-Host "=========================================="
+        Write-Host "KONEKSI BERHASIL DIBUAT"
+        Write-Host "IP RDP Tailscale : $ip"
+        Write-Host "Username         : runneradmin"
+        Write-Host "Password         : (Gunakan value RDP_PASSWORD)"
+        Write-Host "=========================================="
+
+    - name: Keep Alive (Menjaga RDP Tetap Aktif)
+      run: |
+        $i = 0
+        while ($i -lt 360) {
+          Start-Sleep -Seconds 60
+          $i++
+        }

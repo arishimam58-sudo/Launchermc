@@ -1,4 +1,4 @@
-name: Windows RDP with Tailscale
+name: Windows Virtual PC Web (CRD)
 
 on:
   workflow_dispatch:
@@ -7,33 +7,83 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-    - name: Mengaktifkan Remote Desktop & Firewall
+    - name: 1. Persiapan Sistem & Optimasi Performa
       run: |
+        Write-Host "Mengoptimalkan pengaturan Windows..."
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
 
-    - name: Mengatur Password User Admin
-      env:
-        RDP_PASSWORD: ${{ secrets.RDP_PASSWORD }}
+    - name: 2. Install Chrome Remote Desktop Host
       run: |
-        $password = "BlueBerrygaming990"
-        if ([string]::IsNullOrWhitespace($password)) {
-            Write-Error "Secret RDP_PASSWORD belum diisi di Settings GitHub!"
+        Write-Host "Mengunduh Chrome Remote Desktop Installer..."
+        Invoke-WebRequest -Uri "https://dl.google.com/chromeremote/chromedesktopstreamersetup.exe" -OutFile "chromedesktopstreamersetup.exe"
+        Write-Host "Memasang Chrome Remote Desktop..."
+        Start-Process -FilePath "chromedesktopstreamersetup.exe" -ArgumentList "/quiet" -Wait
+        Remove-Item "chromedesktopstreamersetup.exe"
+
+    - name: 3. Install Software Pendukung (Browser & Tools)
+      run: |
+        Write-Host "Memasang Google Chrome Browser..."
+        Invoke-WebRequest -Uri "https://dl.google.com/chrome/install/standalonesetup64.exe" -OutFile "chromesetup.exe"
+        Start-Process -FilePath "chromesetup.exe" -ArgumentList "/silent /install" -Wait
+        Remove-Item "chromesetup.exe"
+        
+        Write-Host "Memasang WinRAR..."
+        Invoke-WebRequest -Uri "https://www.win-rar.com/fileadmin/winrar-versions/winrar/winrar-x64-624.exe" -OutFile "winrar.exe"
+        Start-Process -FilePath "winrar.exe" -ArgumentList "/S" -Wait
+        Remove-Item "winrar.exe"
+
+        Write-Host "Memasang 7-Zip..."
+        Invoke-WebRequest -Uri "https://www.7-zip.org/a/7z2301-x64.exe" -OutFile "7zip.exe"
+        Start-Process -FilePath "7zip.exe" -ArgumentList "/S" -Wait
+        Remove-Item "7zip.exe"
+
+    - name: 4. Install Developer Tools (Git & Node.js)
+      run: |
+        Write-Host "Memasang Git..."
+        Invoke-WebRequest -Uri "https://github.com/git-for-windows/git/releases/download/v2.42.0.windows.1/Git-2.42.0-64-bit.exe" -OutFile "git.exe"
+        Start-Process -FilePath "git.exe" -ArgumentList "/VERYSILENT /NORESTART" -Wait
+        Remove-Item "git.exe"
+
+        Write-Host "Memasang Node.js..."
+        Invoke-WebRequest -Uri "https://nodejs.org/dist/v18.18.0/node-v18.18.0-x64.msi" -OutFile "nodejs.msi"
+        Start-Process -FilePath "msiexec.exe" -ArgumentList "/i nodejs.msi /qn" -Wait
+        Remove-Item "nodejs.msi"
+
+    - name: 5. Verifikasi Otorisasi Google Chrome Remote Desktop
+      env:
+        AUTH_CODE: ${{ secrets.CRD_CODE }}
+      run: |
+        $code = "$env:AUTH_CODE"
+        if ([string]::IsNullOrWhitespace($code)) {
+            Write-Error "Secret CRD_CODE belum diisi di Settings GitHub!"
+            Write-Host "Silakan ambil kode dari https://remotedesktop.google.com/headless lalu simpan di Secret CRD_CODE."
             exit 1
         }
-        net user runneradmin $password
+        Write-Host "Menghubungkan akun Google..."
+        Invoke-Expression $code
 
-    - name: Unduh & Install Tailscale
-      env:
-        TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+    - name: 6. Tampilkan Informasi Status Virtual PC
       run: |
-        Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe" -OutFile "tailscale-setup.exe"
-        Start-Process -FilePath "tailscale-setup.exe" -ArgumentList "/quiet" -Wait
-        Start-Sleep -Seconds 10
-        & "C:\Program Files\Tailscale\tailscale.exe" up --authkey $env:TAILSCALE_AUTHKEY --hostname github-rdp
+        Write-Host "========================================================="
+        Write-Host "VIRTUAL PC BERHASIL DIAKTIFKAN DAN SIAP DIGUNAKAN!"
+        Write-Host "Akses dari HP via Web Browser:"
+        Write-Host "--> https://remotedesktop.google.com/access"
+        Write-Host "Status: Online"
+        Write-Host "========================================================="
 
-    - name: Tampilkan Informasi Login RDP
+    - name: 7. Keep Alive Loop (Menjaga Server Tetap Aktif 6 Jam)
+      run: |
+        $counter = 0
+        $maxMinutes = 360
+        Write-Host "Memulai loop Keep Alive selama 6 jam..."
+        while ($counter -lt $maxMinutes) {
+            Start-Sleep -Seconds 60
+            $counter++
+            $remaining = $maxMinutes - $counter
+            Write-Host "Server RDP masih aktif... Sisa waktu: $remaining menit."
+        }
       run: |
         $ip = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
         Write-Host "=========================================="
